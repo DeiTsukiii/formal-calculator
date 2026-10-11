@@ -1,0 +1,20 @@
+{
+  "name": "Calculatrice formelle",
+  "short_name": "Calculatrice",
+  "description": "Calculatrice formelle scientifique et symbolique",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#2e5b7e",
+  "background_color": "#f2f1ed",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
