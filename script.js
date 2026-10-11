@@ -24,6 +24,7 @@ const MK={
  diffn:()=>mkS({t:'diffn'},['','','']),
  mat2:()=>mkM(2,2),
  mat3:()=>mkM(3,3),
+ mat:()=>mkS({t:'matInput'},['','']),
  vec2:()=>mkV(2),
  vec3:()=>mkV(3),
  vec4:()=>mkV(4),
@@ -67,7 +68,16 @@ function left(){const s=cur.slot;
 const empty=n=>!n.slots||n.slots.every(s=>!s.nodes.length);
 function bs(){const s=cur.slot;
   if(cur.i>0){const p=s.nodes[cur.i-1];if(!p.slots||empty(p)){s.nodes.splice(cur.i-1,1);cur.i--}else left()}
-  else if(s.parent){const n=s.parent;if(empty(n)){const ps=n.parentSlot,i=idx(n);ps.nodes.splice(i,1);cur={slot:ps,i}}else left()}}
+  else if(s.parent){const n=s.parent;if(empty(n)){const ps=n.parentSlot,i=idx(n);ps.nodes.splice(i,1);cur={slot:ps,i}}  else left()}}
+function finalizeMatrixBuilder(){
+  for(const n of [...root.nodes]){
+  if(n.t!=='matInput')continue;
+  const rows=Number.parseInt(plain(n.slots[0]),10),cols=Number.parseInt(plain(n.slots[1]),10);
+  if(!Number.isInteger(rows)||!Number.isInteger(cols)||rows<1||rows>10||cols<1||cols>10)continue;
+  const ps=n.parentSlot,i=idx(n),m=mkM(rows,cols);m.parentSlot=ps;ps.nodes[i]=m;
+  cur={slot:m.slots[0],i:0};
+  }
+}
 /* ---------- rendu éditeur ---------- */
 const SL=new WeakMap();
 const D={'*':'×','-':'−','/':'÷',pi:'π',Infinity:'∞'};
@@ -105,6 +115,8 @@ function rNode0(n){const s=n.slots&&n.slots.map(rSlot);let e;
     if(n.name==='conj')return E('span','conjbar',s[0]);
     if(n.name==='floor')return E('span','fnc','⌊',s[0],'⌋');
     if(n.name==='ceil')return E('span','fnc','⌈',s[0],'⌉');
+    if(n.name==='transp')return E('span','fnc',s[0],E('sup','pw','t'));
+    if(n.name==='inv')return E('span','fnc',s[0],E('sup','pw','−1'));
     return E('span','fnc',E('span','nm',n.name),'(',s[0],')');
   case 'sum':return E('span','',E('span','sum',E('span','up',s[2]),E('span','sy','∑'),E('span','lo',s[0],'=',s[1])),s[3]);
   case 'defint':return E('span','fnc',E('span','intg',E('span','sy','∫'),E('span','lims',E('span','up',s[1]),E('span','lo',s[0]))),s[2],E('span','dd','\u00a0d'),s[3]);
@@ -116,6 +128,7 @@ function rNode0(n){const s=n.slots&&n.slots.map(rSlot);let e;
   case 'diffn':return E('span','fnc',E('span','frac',E('span','fn','d',E('span','pw2',s[1])),E('span','fd','d',s[0],E('span','pw2',plain(n.slots[1])||'n'))),'(',s[2],')');
   case 'dl':return E('span','fnc',E('span','lim','DL',E('span','lo',s[0],'→',s[1],' ; ordre ',s[2])),s[3]);
   case 'mat':{const g=E('span','mat');g.style.gridTemplateColumns=`repeat(${n.c},auto)`;s.forEach(x=>g.append(x));return g}
+  case 'matInput':return E('span','mat-input','mat(',s[0],'×',s[1],')');
   case 'roots':return E('span','rad',E('span','nth',s[1]),'√(',E('span','ov',s[0]),')');
   case 'vec':{const g=E('span','vec');for(let i=0;i<n.r;i++)g.append(E('span','vec-cell',rSlot(n.slots[i])));return g}
   case 'dot':return E('span','fnc',s[0],' · ',s[1]);
@@ -124,9 +137,9 @@ function rNode0(n){const s=n.slots&&n.slots.map(rSlot);let e;
   case 'ode':return E('span','fnc',E('span','nm','ED'),'(',s[0],', ',s[1],', ',s[2],', ',s[3],'; ',s[4],')');
   }}
 let anc=new Set();
-const NM={sum:'Somme ∑',defint:'Intégrale ∫',int:'Primitive ∫',diff:'Dérivée d/dx',lim:'Limite',frac:'Fraction',pow:'Exposant',sqrt:'Racine',abs:'Valeur absolue',fn:'Fonction',prod:'Produit ∏',binom:'Binomial',diffn:'Dérivée n-ième',dl:'Développement limité',mat:'Matrice',vec:'Vecteur',roots:'Racines n-ièmes',dot:'Produit scalaire',cross:'Produit vectoriel',study:'Étude de fonction',ode:'Équation différentielle'};
-const RL={sum:['variable','borne inférieure','borne supérieure','terme'],defint:['borne inférieure','borne supérieure','fonction','variable'],int:['fonction','variable'],diff:['variable','fonction'],lim:['variable','tend vers','fonction'],frac:['numérateur','dénominateur'],pow:['exposant'],sqrt:['sous la racine'],abs:['argument'],fn:['argument'],prod:['variable','borne inférieure','borne supérieure','terme'],binom:['n','k'],diffn:['variable','ordre','fonction'],dl:['variable','point','ordre','fonction'],mat:[],vec:['composante'],roots:['complexe/réel','indice n'],dot:['vecteur u','vecteur v'],cross:['vecteur u','vecteur v'],study:['fonction','variable'],ode:['a','b','x₀','y₀','variable']};
-function draw(){const ed=$('ed');ed.innerHTML='';anc=new Set();const path=[];
+const NM={sum:'Somme ∑',defint:'Intégrale ∫',int:'Primitive ∫',diff:'Dérivée d/dx',lim:'Limite',frac:'Fraction',pow:'Exposant',sqrt:'Racine',abs:'Valeur absolue',fn:'Fonction',prod:'Produit ∏',binom:'Binomial',diffn:'Dérivée n-ième',dl:'Développement limité',mat:'Matrice',matInput:'Dimensions de matrice',vec:'Vecteur',roots:'Racines n-ièmes',dot:'Produit scalaire',cross:'Produit vectoriel',study:'Étude de fonction',ode:'Équation différentielle'};
+const RL={sum:['variable','borne inférieure','borne supérieure','terme'],defint:['borne inférieure','borne supérieure','fonction','variable'],int:['fonction','variable'],diff:['variable','fonction'],lim:['variable','tend vers','fonction'],frac:['numérateur','dénominateur'],pow:['exposant'],sqrt:['sous la racine'],abs:['argument'],fn:['argument'],prod:['variable','borne inférieure','borne supérieure','terme'],binom:['n','k'],diffn:['variable','ordre','fonction'],dl:['variable','point','ordre','fonction'],mat:[],matInput:['lignes','colonnes'],vec:['composante'],roots:['complexe/réel','indice n'],dot:['vecteur u','vecteur v'],cross:['vecteur u','vecteur v'],study:['fonction','variable'],ode:['a','b','x₀','y₀','variable']};
+function draw(){finalizeMatrixBuilder();const ed=$('ed');ed.innerHTML='';anc=new Set();const path=[];
   for(let s=cur.slot;s&&s.parent;s=s.parent.parentSlot){const n=s.parent;anc.add(n);path.unshift((n.t==='fn'?n.name:NM[n.t])+' › '+(n.t==='mat'?'ligne '+(Math.floor(n.slots.indexOf(s)/n.c)+1)+', col. '+(n.slots.indexOf(s)%n.c+1):RL[n.t][n.slots.indexOf(s)]))}
   $('ctx').textContent=path.length?path.join('  ▸  '):'Expression principale';
   ed.append(rSlot(root));const c=ed.querySelector('.caret');if(c)c.scrollIntoView({block:'nearest',inline:'nearest'})}
@@ -139,6 +152,22 @@ $('ed').addEventListener('click',e=>{
 function ser(nodes){let o='',pv=null;
   for(const n of nodes){const it=one(n);if(pv&&pv.end&&it.start&&!(pv.dg&&it.dg))o+='*';o+=it.s;pv=it}return o}
 function S(n,k){const r=ser(n.slots[k].nodes);if(!r)throw new Error('Complète toutes les cases vides.');return r}
+function validateMatrixProducts(nodes){
+  for(let i=0;i<nodes.length-1;i++){
+    const left=nodes[i],right=nodes[i+1];
+    if(left.t==='mat'&&right.t==='mat'&&left.c!==right.r){
+      throw new Error(`Produit matriciel impossible : une matrice ${left.r}×${left.c} ne peut pas être multipliée par une matrice ${right.r}×${right.c}. Le nombre de colonnes de la première doit égaler le nombre de lignes de la seconde.`);
+    }
+  }
+  for(let i=1;i<nodes.length-1;i++){
+    const op=nodes[i];
+    if(op.t!=='c'||op.v!=='*')continue;
+    const left=nodes[i-1],right=nodes[i+1];
+    if(left.t==='mat'&&right.t==='mat'&&left.c!==right.r){
+      throw new Error(`Produit matriciel impossible : une matrice ${left.r}×${left.c} ne peut pas être multipliée par une matrice ${right.r}×${right.c}. Le nombre de colonnes de la première doit égaler le nombre de lignes de la seconde.`);
+    }
+  }
+}
 function one(n){const T=(s)=>({s,start:true,end:true});
   switch(n.t){
   case 'c':{const v=n.v;if(/^[0-9.]$/.test(v))return{s:v,start:true,end:true,dg:true};
@@ -161,6 +190,7 @@ function one(n){const T=(s)=>({s,start:true,end:true});
   case 'diffn':return T(`diff(${S(n,2)},${S(n,0)},${S(n,1)})`);
   case 'dl':return T(dlStr(S(n,3),S(n,0),S(n,1),S(n,2)));
   case 'mat':{const rows=[];for(let i=0;i<n.r;i++){const r=[];for(let j=0;j<n.c;j++)r.push(S(n,i*n.c+j));rows.push(`[${r.join(',')}]`)}return T(`matrix(${rows.join(',')})`)}
+  case 'matInput':throw new Error('Complète les dimensions de la matrice : mat(lignes,colonnes).');
   case 'vec':return T(`[${n.slots.map((_,i)=>S(n,i)).join(',')}]`);
   case 'roots':return T(`(${S(n,0)})^(1/(${S(n,1)}))`);
   case 'dot':return T(`dot(${S(n,0)},${S(n,1)})`);
@@ -311,6 +341,8 @@ function texOf(nodes){
         t=n.name==='conj'?`\\overline{${q[0]}}`
           :n.name==='floor'?`\\left\\lfloor ${q[0]}\\right\\rfloor`
           :n.name==='ceil'?`\\left\\lceil ${q[0]}\\right\\rceil`
+          :n.name==='transp'?`${q[0]}^{t}`
+          :n.name==='inv'?`${q[0]}^{-1}`
           :`\\operatorname{${n.name}}\\left(${q[0]}\\right)`;
         break;
       case 'sum':t=`\\sum_{${q[0]}=${q[1]}}^{${q[2]}}${q[3]}`;break;
@@ -323,6 +355,7 @@ function texOf(nodes){
       case 'binom':t=`\\binom{${q[0]}}{${q[1]}}`;break;
       case 'dl':t=`\\mathrm{DL}_{${q[2]}}\\left(${q[3]}\\right)_{${q[0]}\\to ${q[1]}}`;break;
       case 'mat':{const r=[];for(let i=0;i<n.r;i++)r.push(q.slice(i*n.c,(i+1)*n.c).join('&'));t=`\\begin{pmatrix}${r.join('\\\\')}\\end{pmatrix}`;break}
+      case 'matInput':t=`\\operatorname{mat}\\left(${q[0]}\\times${q[1]}\\right)`;break;
       case 'vec':t=`\\begin{pmatrix}${q.join('\\\\')}\\end{pmatrix}`;break;
       case 'roots':t=`\\sqrt[${q[1]}]{${q[0]}}`;break;
       case 'dot':t=`${q[0]}\\cdot${q[1]}`;break;
@@ -495,12 +528,68 @@ function functionDomain(e,v){
   return conditions.length?`\\left\\{${v}\\in\\mathbb{R}\\;\\middle|\\;${conditions.join('\\;\\text{ et }\\;')}\\right\\}`:'\\mathbb{R}';
 }
 function solveDifferential(e){
-  const p=e.split('='),left=p.shift().trim(),rhs=p.join('=').trim();
-  const m=left.match(/^diff\((?:([a-z])(?:\(\1\))?),([a-z])\)$/i);
-  if(!m||!rhs)throw new Error('Format attendu : d/dx(y)=a*y+b.');
-  const y=m[1],x=m[2],a=nerdamer(`diff(${rhs},${y})`).evaluate().toString(),b=nerdamer(rhs,{[y]:'0'}).evaluate().toString();
-  if(a==='0')return `y(${x})=${tx(b)}${x}+C_1`;
-  return `y(${x})=C_1e^{${tx(a)}${x}}-${tx(nerdamer(`(${b})/(${a})`).toString())}`;
+  const p=e.split('='),left=p.shift().trim(),equationRhs=p.join('=').trim();
+  const primeVars=[...left.matchAll(/([a-z])\s*('{1,2})/gi)];
+  if(primeVars.some(m=>m[2].length===2)&&primeVars.some(m=>m[2].length===1)){
+    const y=primeVars[0][1],esc=y.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const names={d2:'q2',d1:'q1',y:'q0'};
+    const replaceDerivatives=s=>s
+      .replace(new RegExp(`${esc}\\s*''`,'gi'),names.d2)
+      .replace(new RegExp(`${esc}\\s*'`,'gi'),names.d1)
+      .replace(new RegExp(esc,'gi'),names.y);
+    const expr=`(${replaceDerivatives(left)})-(${replaceDerivatives(equationRhs)})`;
+    try{
+      const evalAt=(d2,d1,y0)=>Number(nerdamer(expr,{[names.d2]:String(d2),[names.d1]:String(d1),[names.y]:String(y0)}).evaluate().text('decimal').replace(/^0-/,'-'));
+      const c=evalAt(0,0,0),a2=evalAt(1,0,0)-c,a1=evalAt(0,1,0)-c,a0=evalAt(0,0,1)-c;
+      if(!Number.isFinite(a2+a1+a0+c)||Math.abs(c)>1e-10)throw new Error('nonlinear');
+      const exactCoefficient=s=>nerdamer(s).toString();
+      const exactA2=exactCoefficient(String(a2)),exactA1=exactCoefficient(String(a1)),exactA0=exactCoefficient(String(a0));
+      const delta=a1*a1-4*a2*a0;
+      if(delta>=0){
+        const r1=(-a1+Math.sqrt(delta))/(2*a2),r2=(-a1-Math.sqrt(delta))/(2*a2);
+        if(Math.abs(delta)<1e-12)return `y(x)=(\\alpha+\\beta x)e^{${tx(String(r1))}x}`;
+        return `y(x)=\\alpha e^{${tx(String(r1))}x}+\\beta e^{${tx(String(r2))}x}`;
+      }
+      const alpha=nerdamer(`-(${exactA1})/(2*(${exactA2}))`).toString();
+      const beta=nerdamer(`sqrt(-(${exactA1})^2+4*(${exactA2})*(${exactA0}))/(2*abs(${exactA2}))`).toString();
+      return `y(x)=e^{${tx(alpha)}x}\\left(\\alpha\\cos(${tx(beta)}x)+\\beta\\sin(${tx(beta)}x)\\right)`;
+    }catch(_){throw new Error("Cette équation différentielle doit être linéaire, homogène et à coefficients constants.")}
+  }
+  const prime=left.match(/^([a-z])('{1,2})(?:\s*\(\s*([a-z])\s*\))?$/i);
+  let derivativeSide=left, remainder='0',rhs=equationRhs;
+  if(!prime){
+    const term=left.match(/(^|[+\-])\s*([a-z])('{1,2})(?:\s*\(\s*([a-z])\s*\))?/i);
+    if(term){
+      const start=term.index+(term[1]?term[1].length:0),end=start+term[2].length+term[3].length+(term[4]?term[4].length+2:0);
+      const sign=term[1]==='-'?'-':'';
+      derivativeSide=`${sign}${term[2]}${term[3]}`;
+      remainder=(left.slice(0,start)+left.slice(end)).replace(/^\+|\+$/g,'').trim()||'0';
+      if(remainder==='-')remainder='0';
+      rhs=`(${equationRhs})-(${remainder})`;
+    }
+  }
+  const m=derivativeSide.match(/^diff\((?:([a-z])(?:\(\1\))?),([a-z])\)$/i);
+  const simple=derivativeSide.match(/^([a-z])('{1,2})$/i);
+  const order=prime?prime[2].length:simple?simple[2].length:1;
+  const y=prime?prime[1]:simple?simple[1]:m&&m[1],x=prime?(prime[3]||'x'):simple?'x':m&&m[2];
+  if((!m&&!simple)||!rhs)throw new Error("Format attendu : y'=a*y+b ou y''=a*y+b.");
+  const a=nerdamer(`diff(${rhs},${y})`).evaluate().toString(),b=nerdamer(rhs,{[y]:'0'}).evaluate().toString();
+  if(order===2){
+    const numeric=s=>Number(nerdamer(s).evaluate().text('decimal').replace(/^0-/,'-'));
+    const A=numeric(a),B=numeric(b);
+    if(!Number.isFinite(A)||!Number.isFinite(B))throw new Error("Pour y'', utilise une équation y''=a*y+b avec a et b constants.");
+    const particular=Math.abs(A)<1e-12?'0':tx(nerdamer(`-(${B})/(${A})`).toString());
+    const joinPart=s=>particular==='0'?s:`${s}${particular.startsWith('-')?'-':'+'}${particular.replace(/^-\s*/,'')}`;
+    if(Math.abs(A)<1e-12)return `y(${x})=\\frac{${tx(b)}}{2}${x}^{2}+\\alpha ${x}+\\beta`;
+    if(A>0){const r=tx(Math.sqrt(A).toString());return `y(${x})=${joinPart(`\\alpha e^{${r}${x}}+\\beta e^{-${r}${x}}`)}`}
+    const w=tx(Math.sqrt(-A).toString());return `y(${x})=${joinPart(`\\alpha\\cos(${w}${x})+\\beta\\sin(${w}${x})`)}`;
+  }
+  if(a==='0')return `y(${x})=${tx(b)}${x}+\\alpha`;
+  const offset=nerdamer(`(${b})/(${a})`).toString();
+  const signed=s=>tx(s).replace(/^-\s*/,'-');
+  const offsetTex=signed(offset);
+  const offsetTerm=offset==='0'?'':offsetTex.startsWith('-')?`+${offsetTex.slice(1)}`:`-${offsetTex}`;
+  return `y(${x})=\\alpha e^{${signed(a)}${x}}${offsetTerm}`;
 }
 function run(mode){
   try{
@@ -513,6 +602,7 @@ function run(mode){
       show(`<span class="lab">Opération vectorielle</span><div class="line"><div class="lq">\\[\\displaystyle ${qt}\\]</div><div class="lr">\\[\\displaystyle =${vectorResult}\\]</div></div>`);pushHist(mode,vectorResult);return
     }
     let qt=texOf(root.nodes);
+    validateMatrixProducts(root.nodes);
     const e=ser(root.nodes);if(!e)throw new Error('Compose un calcul avant d’appuyer sur =.');
     if(root.nodes.length===1&&['vec','roots','dot','cross','study','ode'].includes(root.nodes[0].t)){
       const n=root.nodes[0],rt=advancedNodeRun(n,qt);show(`<span class="lab">${NM[n.t]}</span><div class="line"><div class="lq">\\[\\displaystyle ${qt}\\]</div><div class="lr">\\[\\displaystyle =${rt}\\]</div></div>`);pushHist(mode,rt);return;
@@ -659,6 +749,8 @@ function act(a){
   else if(a==='ans'){if(ans)ins({t:'ans'})}
   else if(a==='ac'){root.nodes=[];cur={slot:root,i:0};$('out').className='';$('out').innerHTML='<span class="hint">Prêt.</span>'}
   else if(a.startsWith('advanced:')){tpl(a.slice(9));draw();return}
+  else if(a==='customMatrix'){tpl('mat');draw();return}
+  else if(a==='customMatrix'){customMatrix();return}
   else if(a.startsWith('mode:')){MODE=a.slice(5);updMode();if(MODE==='ediv'&&!root.nodes.length){push();tpl('frac');draw()}return}
   else{if(!root.nodes.length)return;run(a==='eq'?MODE:a);return}
   draw()}
@@ -683,7 +775,7 @@ const STAY=['arc','hyp'];
 const MENUS={
  analyse:{t:'Analyse',k:[['∑','sum','t'],['∏','prod','t'],['∫','int','t'],['∫ₐᵇ','defint','t'],['d/dx','diff','t'],['dⁿ/dxⁿ','diffn','t'],['lim','lim','t'],['DL','dl','t'],['∞','c:Infinity','o'],['=','c:=','o'],['Él. simples','mode:partfrac','a']]},
  fonctions:{t:'Fonctions',k:[['sin','trig:sin','t'],['cos','trig:cos','t'],['tan','trig:tan','t'],['arc','arc','a'],['hyp','hyp','a'],['ln','ln','t'],['log','log','t'],['eˣ','exp','t'],['|x|','abs','t'],['⌊x⌋','floor','t'],['⌈x⌉','ceil','t']]},
- matrices:{t:'Matrices',k:[['2×2','mat2','t'],['3×3','mat3','t'],['det','det','t'],['M⁻¹','inv','t'],['Mᵗ','transp','t'],['Val. propres','mode:eig','a']]},
+ matrices:{t:'Matrices',k:[['M×N personnalisée','customMatrix','t'],['2×2','mat2','t'],['3×3','mat3','t'],['det','det','t'],['M⁻¹','inv','t'],['Mᵗ','transp','t'],['Val. propres','mode:eig','a']]},
  complexes:{t:'Complexes',k:[['i','c:i','t'],['z','c:z','o'],['Re','re','t'],['Im','im','t'],['z̄','conj','t'],['arg','arg','t'],['|z|','abs','t'],['ⁿ√z','advanced:roots','t'],['Polaire','mode:polar','a'],['Algébrique','mode:rect','a']]},
  arith:{t:'Arithmétique',k:[['n!','c:!','t'],['Cₙᵏ','binom','t'],['pgcd','pgcd','t'],['ppcm','ppcm','t'],['Div. eucl.','mode:ediv','a']]},
  vars:{t:'Variables et constantes',k:[['y','c:y','o'],['z','c:z','o'],['a','c:a','o'],['b','c:b','o'],['c','c:c','o'],['k','c:k','o'],['n','c:n','o'],['p','c:p','o'],['t','c:t','o'],['e','c:e','o'],['i','c:i','o'],['π','c:pi','t'],['=','c:=','o'],['Ans','ans','a']]},
@@ -714,6 +806,39 @@ mkK(KM,$('pad'),false);if(window.lucide)lucide.createIcons();updMode();
 document.addEventListener('click',ev=>{const t=ev.target;if(t.isConnected&&!t.closest('#menu')&&!t.closest('[data-menu]'))closeMenu()});
 
 const FUNCS={ln:['ln','log'],log:['log','log10'],sec:['sec','sec'],csc:['csc','csc'],cot:['cot','cot'],conj:['conj','conjugate'],det:['det','determinant'],inv:['inv','invert'],pgcd:['pgcd','gcd'],ppcm:['ppcm','lcm'],mod:['mod','mod'],floor:['floor','floor'],ceil:['ceil','ceil']};
+
+function findMatchingParen(s,start){let d=0;for(let i=start;i<s.length;i++){if(s[i]==='(')d++;else if(s[i]===')'){d--;if(d===0)return i}}return -1}
+function reduceNumericRoundings(expr){
+  if(typeof expr!=='string'||!expr) return expr;
+  let out='';
+  for(let i=0;i<expr.length;i++){
+    let handled=false;
+    for(const name of ['floor','ceil']){
+      if(!expr.startsWith(name+'(',i))continue;
+      const end=findMatchingParen(expr,i+name.length);
+      if(end<0)continue;
+      const inner=expr.slice(i+name.length+1,end);
+      const reduced=reduceNumericRoundings(inner);
+      try{
+        const value=nerdamerBase(reduced).evaluate();
+        const text=value.text('decimals');
+        const n=Number(text);
+        if(Number.isFinite(n)){
+          out += name==='floor' ? String(Math.floor(n)) : String(Math.ceil(n));
+          i=end; handled=true; break;
+        }
+      }catch(_){ }
+      out += `${name}(${reduced})`;
+      i=end; handled=true; break;
+    }
+    if(!handled) out += expr[i];
+  }
+  return out;
+}
+const nerdamerBase = nerdamer;
+const nerdamerSafe = (...args) => nerdamerBase(reduceNumericRoundings(String(args[0] ?? '')), ...args.slice(1));
+Object.assign(nerdamerSafe, nerdamerBase);
+window.nerdamer = nerdamerSafe;
 ['sin','cos','tan'].forEach(b=>{FUNCS[b]=[b,b];FUNCS['a'+b]=FUNCS['arc'+b]=['arc'+b,'a'+b]});
 const WORDS=[...Object.keys(FUNCS),'sqrt','abs','exp','pi','inf','sum','int','lim','diff','prod','binom'].sort((a,b)=>b.length-a.length);
 const BR=['fn','sqrt','abs'];
@@ -737,9 +862,10 @@ document.addEventListener('keydown',e=>{
   if(k==='('&&cur.slot.parent&&BR.includes(cur.slot.parent.t)&&!cur.slot.nodes.length){e.preventDefault();return}
   if(k===')'&&cur.slot.parent&&BR.includes(cur.slot.parent.t)&&cur.i===cur.slot.nodes.length&&balanced(cur.slot)){e.preventDefault();right();draw();return}
   if(/^[0-9.+\-*(),!]$/.test(k))a='c:'+k;
+  else if(k==="'")a="c:'";
   else if(k==='/')a='frac';else if(k==='^')a='pow';
   else if(k==='Enter')a='eq';
-  else if(k==='=')a=MODE==='solve'?'c:=':'eq';
+  else if(k==='=')a='c:=';
   else if(k==='Backspace')a='bs';
   else if(k==='ArrowLeft')a='left';else if(k==='ArrowRight')a='right';else if(k==='Escape')a='ac';
   if(a){e.preventDefault();act(a)}});
