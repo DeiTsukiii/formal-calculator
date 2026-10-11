@@ -461,8 +461,9 @@ function periodicSolution(e){
   const result=group&&group[key];
   return result?`${tx(v)}\\equiv ${result[0]}\\pmod{${result[1]}}`:null;
 }
-const LAB={eq:'Résultat',expand:'Développé',factor:'Factorisé',simplify:'Simplifié',solve:'Solutions',polar:'Forme polaire',rect:'Forme algébrique',eig:'Polynôme caractéristique et valeurs propres',partfrac:'Éléments simples',approx:'Valeur approchée',ediv:'Division euclidienne',study:'Étude de fonction',ode:'Équation différentielle'};
+const LAB={eq:'Résultat',expand:'Développé',factor:'Factorisé',simplify:'Calculer',solve:'Solutions',polar:'Forme polaire',rect:'Forme algébrique',eig:'Polynôme caractéristique et valeurs propres',partfrac:'Éléments simples',approx:'Valeur approchée',ediv:'Division euclidienne',study:'Étude de fonction',ode:'Équation différentielle'};
 const FN={polar:'polarform',rect:'rectform'};
+const exactSimplify=s=>{try{return nerdamer(`simplify(${s})`).toString()}catch(_){return s}};
 async function show(html,err){const o=$('out');o.className=err?'err':'';o.innerHTML=html;if(!err)try{await MathJax.typesetPromise([o])}catch(e){}}
 function vectorValue(s){return s.replace(/^\[|\]$/g,'').split(',').map(x=>parseFloat(nerdamer(x).evaluate().text('decimal')))}
 function vectorOperationRun(nodes){
@@ -530,8 +531,9 @@ function functionDomain(e,v){
 function solveDifferential(e){
   const p=e.split('='),left=p.shift().trim(),equationRhs=p.join('=').trim();
   const primeVars=[...left.matchAll(/([a-z])\s*('{1,2})/gi)];
-  if(primeVars.some(m=>m[2].length===2)&&primeVars.some(m=>m[2].length===1)){
-    const y=primeVars[0][1],esc=y.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  if(primeVars.some(m=>m[2].length===2)){
+    const secondOrderVar=primeVars.find(m=>m[2].length===2);
+    const y=secondOrderVar[1],esc=y.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     const names={d2:'q2',d1:'q1',y:'q0'};
     const replaceDerivatives=s=>s
       .replace(new RegExp(`${esc}\\s*''`,'gi'),names.d2)
@@ -540,20 +542,48 @@ function solveDifferential(e){
     const expr=`(${replaceDerivatives(left)})-(${replaceDerivatives(equationRhs)})`;
     try{
       const evalAt=(d2,d1,y0)=>Number(nerdamer(expr,{[names.d2]:String(d2),[names.d1]:String(d1),[names.y]:String(y0)}).evaluate().text('decimal').replace(/^0-/,'-'));
-      const c=evalAt(0,0,0),a2=evalAt(1,0,0)-c,a1=evalAt(0,1,0)-c,a0=evalAt(0,0,1)-c;
-      if(!Number.isFinite(a2+a1+a0+c)||Math.abs(c)>1e-10)throw new Error('nonlinear');
+      const leftExpr=replaceDerivatives(left),rhsExpr=replaceDerivatives(equationRhs);
+      const forceMatch=equationRhs.match(/^\s*(sin|cos)\s*\(\s*([0-9.]+)?\s*\*?\s*x\s*\)\s*$/i);
+      const forceName=forceMatch&&forceMatch[1].toLowerCase(),forceFrequency=forceMatch&&Number(forceMatch[2]||1);
+      const c=forceMatch?0:evalAt(0,0,0),a2=Number(nerdamer(leftExpr,{[names.d2]:'1',[names.d1]:'0',[names.y]:'0'}).evaluate().text('decimal')),a1=Number(nerdamer(leftExpr,{[names.d2]:'0',[names.d1]:'1',[names.y]:'0'}).evaluate().text('decimal')),a0=Number(nerdamer(leftExpr,{[names.d2]:'0',[names.d1]:'0',[names.y]:'1'}).evaluate().text('decimal'));
+      if(!Number.isFinite(a2+a1+a0+c))throw new Error('nonlinear');
       const exactCoefficient=s=>nerdamer(s).toString();
-      const exactA2=exactCoefficient(String(a2)),exactA1=exactCoefficient(String(a1)),exactA0=exactCoefficient(String(a0));
+      const exactA2=exactCoefficient(String(a2)),exactA1=exactCoefficient(String(a1)),exactA0=exactCoefficient(String(a0)),exactC=exactCoefficient(String(c));
+      let particular='0';
+      if(forceName){
+        const w=exactCoefficient(String(forceFrequency)),a=exactCoefficient(`(${exactA0})-(${exactA2})*(${w})^2`),b=exactCoefficient(`(${exactA1})*(${w})`);
+        if(Math.abs(a0-a2*forceFrequency*forceFrequency)<1e-10&&Math.abs(a1)<1e-10){
+          particular=forceName==='sin'
+            ?`-x*cos(${w}*x)/(2*(${exactA2})*(${w}))`
+            :`x*sin(${w}*x)/(2*(${exactA2})*(${w}))`;
+          const homogeneous=forceName==='sin'
+            ?`\\alpha\\cos(${w}x)+\\beta\\sin(${w}x)`
+            :`\\alpha\\cos(${w}x)+\\beta\\sin(${w}x)`;
+          return `y(x)=${homogeneous}+${tx(nerdamer(particular).toString())}`;
+        }else{
+          const denominator=exactCoefficient(`(${a})^2+(${b})^2`);
+          const sinCoefficient=forceName==='sin'?exactCoefficient(`(${a})/(${denominator})`):exactCoefficient(`-(${b})/(${denominator})`);
+          const cosCoefficient=forceName==='sin'?exactCoefficient(`-(${b})/(${denominator})`):exactCoefficient(`(${a})/(${denominator})`);
+          particular=`(${sinCoefficient})*sin(${w}*x)+(${cosCoefficient})*cos(${w}*x)`;
+        }
+      }else if(Math.abs(c)>1e-10){
+        if(Math.abs(a0)>1e-10) particular=exactCoefficient(`-(${exactC})/(${exactA0})`);
+        else if(Math.abs(a1)>1e-10) particular=exactCoefficient(`-(${exactC})/(${exactA1})*x`);
+        else if(Math.abs(a2)>1e-10) particular=exactCoefficient(`-(${exactC})/(2*(${exactA2}))*x^2`);
+        else throw new Error('invalid');
+      }
+      const particularTex=forceName?tx(nerdamer(particular).toString()):tx(particular);
+      const joinPart=s=>particular==='0'?s:`${s}${particularTex.startsWith('-')?'':'+'}${particularTex}`;
       const delta=a1*a1-4*a2*a0;
       if(delta>=0){
         const r1=(-a1+Math.sqrt(delta))/(2*a2),r2=(-a1-Math.sqrt(delta))/(2*a2);
-        if(Math.abs(delta)<1e-12)return `y(x)=(\\alpha+\\beta x)e^{${tx(String(r1))}x}`;
-        return `y(x)=\\alpha e^{${tx(String(r1))}x}+\\beta e^{${tx(String(r2))}x}`;
+        if(Math.abs(delta)<1e-12)return `y(x)=${joinPart(`(\\alpha+\\beta x)e^{${tx(String(r1))}x}`)}`;
+        return `y(x)=${joinPart(`\\alpha e^{${tx(String(r1))}x}+\\beta e^{${tx(String(r2))}x}`)}`;
       }
       const alpha=nerdamer(`-(${exactA1})/(2*(${exactA2}))`).toString();
       const beta=nerdamer(`sqrt(-(${exactA1})^2+4*(${exactA2})*(${exactA0}))/(2*abs(${exactA2}))`).toString();
-      return `y(x)=e^{${tx(alpha)}x}\\left(\\alpha\\cos(${tx(beta)}x)+\\beta\\sin(${tx(beta)}x)\\right)`;
-    }catch(_){throw new Error("Cette équation différentielle doit être linéaire, homogène et à coefficients constants.")}
+      return `y(x)=${joinPart(`e^{${tx(alpha)}x}\\left(\\alpha\\cos(${tx(beta)}x)+\\beta\\sin(${tx(beta)}x)\\right)`)}`;
+    }catch(_){throw new Error("Cette équation différentielle doit être linéaire à coefficients constants, avec un second membre constant.")}
   }
   const prime=left.match(/^([a-z])('{1,2})(?:\s*\(\s*([a-z])\s*\))?$/i);
   let derivativeSide=left, remainder='0',rhs=equationRhs;
@@ -621,7 +651,7 @@ function run(mode){
         else{
           const v=pickVar(e);o=nerdamer(`solve(${equation},${v})`);
           const raw=o.toString().replace(/^\[|\]$/g,'');
-          rt=raw?raw.split(',').map(s=>`${v}=${tx(s)}`).join('\\quad\\text{ou}\\quad '):'\\text{aucune solution}';
+          rt=raw?raw.split(',').map(s=>`${v}=${tx(exactSimplify(s))}`).join('\\quad\\text{ou}\\quad '):'\\text{aucune solution}';
         }
       }
     }
@@ -633,7 +663,7 @@ function run(mode){
       o=f;
       const limNeg=nerdamer(`limit(${e},${v},-Infinity)`).toString();
       const limPos=nerdamer(`limit(${e},${v},Infinity)`).toString();
-      rt=`\\begin{aligned}D_f&=${functionDomain(e,v)}\\\\f(${v})&=${tx(f.toString())}\\\\f'(${v})&=${tx(d.toString())}\\\\f''(${v})&=${tx(dd.toString())}\\\\\\lim_{${v}\\to-\\infty}f&=${tx(limNeg)}\\\\\\lim_{${v}\\to+\\infty}f&=${tx(limPos)}\\end{aligned}`;
+      rt=`\\begin{aligned}D_f&=${functionDomain(e,v)}\\\\f(${v})&=${tx(exactSimplify(f.toString()))}\\\\f'(${v})&=${tx(exactSimplify(d.toString()))}\\\\f''(${v})&=${tx(exactSimplify(dd.toString()))}\\\\\\lim_{${v}\\to-\\infty}f&=${tx(exactSimplify(limNeg))}\\\\\\lim_{${v}\\to+\\infty}f&=${tx(exactSimplify(limPos))}\\end{aligned}`;
     }
     else if(mode==='polar'){o=nerdamer(e);rt=polarTex(e)}
     else if(mode==='eig'){const sz=nerdamer(`size(${e})`).toString().match(/\d+/);const n=sz?sz[0]:'2';o=nerdamer(`expand(determinant((${e})-t*imatrix(${n})))`);const rs=nerdamer(`solve(${o.toString()},t)`).toString().replace(/^\[|\]$/g,'');rt=`\\begin{aligned}\\chi(t)&=${o.toTeX()}\\\\ \\lambda&=${rs?rs.split(',').map(s=>tx(s)).join(',\\;'):'\\text{aucune}'}\\end{aligned}`}
@@ -651,7 +681,7 @@ function run(mode){
       rt=ints?`${A}=${P(B)}\\times ${P(q)}+${r}\\quad(0\\le r<${B.replace('-','')})`:`${tx(A)}=\\left(${tx(B)}\\right)\\left(${tx(q)}\\right)+${P(r)}`}
     else if(mode==='approx'){o=nerdamer(e);const ev=o.evaluate(),d=ev.text('decimals');rt=/^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(d)?`\\approx ${d}`:`\\approx ${ev.toTeX().replace(/Infinity/g,'\\infty')}`}
     else if(mode==='partfrac'){o=nerdamer(`partfrac(${e},${pickVar(e)})`);rt=prettyFloorCeil(o.toTeX());ans=o.toString()}
-    else{o=nerdamer(mode==='eq'?e:`${FN[mode]||mode}(${e})`);rt=tx(o.toString());try{rt=displayLogTex(o.toTeX().replace(/Infinity/g,'\\infty'),e)}catch(_){}
+    else{o=nerdamer(mode==='eq'?e:`${FN[mode]||mode}(${e})`);if(!['expand','factor'].includes(mode))o=nerdamer(exactSimplify(o.toString()));rt=tx(o.toString());try{rt=displayLogTex(o.toTeX().replace(/Infinity/g,'\\infty'),e)}catch(_){}
       ans=o.toString();
       }
     rt=scientificTex(rt);
@@ -726,7 +756,7 @@ const K=[
  ['sin','trig:sin','t'],['cos','trig:cos','t'],['tan','trig:tan','t'],['|x|','abs','t'],['π','c:pi','t'],
  ['arc','arc','a'],['hyp','hyp','a'],['i','c:i','t'],['∞','c:Infinity','o'],['Ans','ans','a'],
  ['x','c:x','o'],['y','c:y','o'],['z','c:z','o'],['n','c:n','o'],['k','c:k','o'],
- ['Développer','expand','a'],['Factoriser','factor','a'],['Simplifier','simplify','a'],['Résoudre','solve','a'],['Algébrique','rect','a'],
+ ['Développer','expand','a'],['Factoriser','factor','a'],['Calculer','simplify','a'],['Résoudre','solve','a'],['Algébrique','rect','a'],
  ['Re','re','t'],['Im','im','t'],['z̄','conj','t'],['arg','arg','t'],['Polaire','polar','a'],
  ['7','c:7'],['8','c:8'],['9','c:9'],['(','c:('],[')','c:)'],
  ['4','c:4'],['5','c:5'],['6','c:6'],['×','c:*','o'],['÷','frac','o'],
@@ -764,11 +794,11 @@ const K2=[
  ['(','c:(','o'],[')','c:)','o'],['AC','ac','a'],['↶','undo','a'],['↷','redo','a']
 ];
 const ICONS={analyse:'sigma',fonctions:'function-square',matrices:'table-2',complexes:'circle-dot',arith:'binary',vars:'variable',physics:'atom',mode:'sliders-horizontal',advanced:'move-3d'};
-const MODEL={eq:'Calculer',expand:'Développer',factor:'Factoriser',simplify:'Simplifier',solve:'Résoudre',partfrac:'Él. simples',approx:'≈ Approché',polar:'Polaire',rect:'Algébrique',eig:'Val. propres',ediv:'Div. euclidienne',study:'Étude fonction',ode:'Éq. diff.'};
-const MODEK=['eq','expand','factor','simplify','solve','partfrac','approx','ediv','study','ode'].map(k=>[MODEL[k],'mode:'+k,'a']);
-let MODE='eq';
-function updMode(){const t=$('modeTag');if(t)t.textContent=MODE==='eq'?'':'Mode : '+MODEL[MODE];
-  const b=document.querySelector('#pad [data-menu="mode"]');if(b){const lb=b.querySelector('.lb');if(lb)lb.textContent=MODEL[MODE];b.classList.toggle('on',MODE!=='eq')}
+const MODEL={expand:'Développer',factor:'Factoriser',simplify:'Calculer',solve:'Résoudre',partfrac:'Él. simples',approx:'≈ Approché',polar:'Polaire',rect:'Algébrique',eig:'Val. propres',ediv:'Div. euclidienne',study:'Étude fonction',ode:'Éq. diff.'};
+const MODEK=['simplify','expand','factor','solve','partfrac','approx','ediv','study','ode'].map(k=>[MODEL[k],'mode:'+k,'a']);
+let MODE='simplify';
+function updMode(){const t=$('modeTag');if(t)t.textContent=MODE==='simplify'?'':'Mode : '+MODEL[MODE];
+  const b=document.querySelector('#pad [data-menu="mode"]');if(b){const lb=b.querySelector('.lb');if(lb)lb.textContent=MODEL[MODE];b.classList.toggle('on',MODE!=='simplify')}
   const names=Object.values(MODEL);
   document.querySelectorAll('#menu .mg button').forEach(x=>{if(names.includes(x.textContent))x.classList.toggle('on',x.textContent===MODEL[MODE])})}
 const STAY=['arc','hyp'];
@@ -785,7 +815,7 @@ const MENUS={
 };
 const KM=[
  [[ICONS.analyse,'Analyse'],'menu:analyse','m'],[[ICONS.fonctions,'Fonctions'],'menu:fonctions','m'],[[ICONS.complexes,'Complexes'],'menu:complexes','m'],[[ICONS.advanced,'Vecteurs'],'menu:advanced','m'],[[ICONS.matrices,'Matrices'],'menu:matrices','m'],[[ICONS.arith,'Arith.'],'menu:arith','m'],
- ['xⁿ','pow','t'],['√','sqrt','t'],['𝑥','c:x','v'],[[ICONS.vars,'Variables'],'menu:vars','m'],[[ICONS.physics,'Physique'],'menu:physics','m'],[[ICONS.mode,'Calculer'],'menu:mode','m'],
+ ['xⁿ','pow','t'],['√','sqrt','t'],['𝑥','c:x','v'],[[ICONS.vars,'Variables'],'menu:vars','m'],[[ICONS.physics,'Physique'],'menu:physics','m'],[[ICONS.mode,'Mode'],'menu:mode','m'],
  ['7','c:7'],['8','c:8'],['9','c:9'],['×','c:*','o'],['÷','frac','o'],['(','c:(','o'],
  ['4','c:4'],['5','c:5'],['6','c:6'],['+','c:+','o'],['−','c:-','o'],[')','c:)','o'],
  ['1','c:1'],['2','c:2'],['3','c:3'],['◀','left','o'],['▶','right','o'],['⌫','bs','o'],
