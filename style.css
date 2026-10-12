@@ -60,7 +60,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px system-ui,-apple-s
 .nb .fn{border-bottom:0}
 .pr{font-size:2.2em;font-weight:200;line-height:1;margin:0 1px}
 .pw2{align-self:flex-start;font-size:.65em;margin-left:1px}
-.tbar{display:flex;gap:6px;justify-content:flex-end;margin-bottom:2px}
+.tbar{display:flex;gap:6px;justify-content:flex-end;align-items:center;margin-bottom:2px}
+.tbar #modeTag{margin-right:auto;color:var(--mut);font:700 .72rem system-ui;letter-spacing:.08em}
 .tbar button{border:0;background:var(--tpl);color:var(--acc);border-radius:8px;padding:3px 10px;font:600 .75rem system-ui;cursor:pointer}
 .ch.op{padding:0 .2em}
 .ch.va{font-style:italic}
@@ -83,6 +84,10 @@ body{background:var(--body)}
 .menu[hidden]{display:none}
 .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font:700 .85rem system-ui;color:var(--acc)}
 .mh .mx{border:0;background:var(--op);color:var(--ink);border-radius:8px;padding:3px 9px;cursor:pointer}
+.options{display:grid;gap:10px}
+.option-group{display:grid;gap:5px}
+.option-group strong{font-size:.75rem;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+.option-group button{height:38px}
 .pad.mg{grid-template-columns:repeat(4,1fr)}
 @media (min-width:880px),(max-height:520px) and (orientation:landscape){
  .calc{flex-direction:row;gap:18px;padding:18px}

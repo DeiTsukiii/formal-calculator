@@ -1,43 +1,78 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Calculatrice formelle</title>
-<meta name="theme-color" content="#2e5b7e">
-<meta name="description" content="Calculatrice formelle scientifique et symbolique">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-<div class="calc">
-  <div class="scr">
-    <div class="tbar"><span id="modeTag"></span><button id="tUndo" title="Annuler (Ctrl+Z)">↶</button><button id="tRedo" title="Rétablir (Ctrl+Y)">↷</button><button id="tCopy">Copier LaTeX</button></div>
-    <div id="ed" role="textbox" aria-label="Zone de calcul"></div>
-    <div id="ctx"></div>
-    <div id="out"><span class="hint">Compose ton calcul avec les touches (∑, ∫, d/dx, fractions…) puis appuie sur =</span></div>
-  </div>
-  <div class="keys">
-  <div class="pad" id="pad"></div>
-  <div class="menu" id="menu" hidden></div>
-  </div>
-</div>
 
-<script>window.MathJax={svg:{fontCache:'global'},tex:{inlineMath:[]},startup:{typeset:false}};</script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Extra.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
-<script src="script.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
-}
-</script>
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <title>Calculatrice formelle</title>
+  <meta name="theme-color" content="#2e5b7e">
+  <meta
+    name="description"
+    content="Calculatrice formelle scientifique et symbolique"
+  >
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="calc">
+    <div class="scr">
+      <div class="tbar">
+        <span id="modeTag" aria-live="polite"></span>
+        <button id="tUndo" title="Annuler (Ctrl+Z)">↶</button>
+        <button id="tRedo" title="Rétablir (Ctrl+Y)">↷</button>
+        <button id="tCopy">Copier LaTeX</button>
+      </div>
+
+      <div id="ed" role="textbox" aria-label="Zone de calcul"></div>
+      <div id="ctx"></div>
+      <div id="out">
+        <span class="hint">
+          Compose ton calcul avec les touches (∑, ∫, d/dx, fractions…) puis
+          appuie sur =
+        </span>
+      </div>
+    </div>
+
+    <div class="keys">
+      <div class="pad" id="pad"></div>
+      <div class="menu" id="menu" hidden></div>
+    </div>
+  </div>
+
+  <!-- MathJax doit être configuré avant le chargement de sa bibliothèque. -->
+  <script>
+    window.MathJax = {
+      svg: { fontCache: 'global' },
+      tex: { inlineMath: [] },
+      startup: { typeset: false }
+    };
+  </script>
+
+  <!-- Bibliothèques utilisées par la calculatrice. -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Extra.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Code applicatif, chargé après ses dépendances. -->
+  <script src="script.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
 </body>
+
 </html>

@@ -243,6 +243,16 @@ function defStr(body,v,a,b){
   }
   return gen}
 /* ---------- forme polaire (module · e^{i·argument}) ---------- */
+function simplifyPolarAngle(angle){
+  const match=angle.match(/^\(-?(\d+)\*pi\/(\d+)\)$/);
+  if(!match)return angle;
+  const negative=angle.startsWith('-'),numerator=(negative?-1:1)*Number(match[1]),denominator=Number(match[2]);
+  if(numerator===0)return '0';
+  if(denominator===1)return `${numerator}*pi`;
+  if(numerator===1)return `pi/${denominator}`;
+  if(numerator===-1)return `-pi/${denominator}`;
+  return `${numerator}*pi/${denominator}`;
+}
 function polarTex(e){
   const val=s=>parseFloat(nerdamer(s).evaluate().text('decimals'));
   let re=NaN,im=NaN;try{re=val(`realpart(${e})`);im=val(`imagpart(${e})`)}catch(_){}
@@ -251,11 +261,11 @@ function polarTex(e){
   if(r<1e-12)return '0';
   let rs=null,ts=null;
   try{const s=nerdamer(`abs(${e})`).toString();if(Math.abs(val(s)-r)<1e-9*(1+r))rs=s}catch(_){}
-  if(Math.abs(th)<1e-12)ts='0';else{const q=th/Math.PI;for(let d=1;d<=12&&!ts;d++){const p=Math.round(q*d);if(Math.abs(q-p/d)<1e-9)ts=(p<0?'-':'')+`(${Math.abs(p)}*pi/${d})`}}
+  if(Math.abs(th)<1e-12)ts='0';else{const q=th/Math.PI;for(let d=1;d<=12&&!ts;d++){const p=Math.round(q*d);if(Math.abs(q-p/d)<1e-9)ts=simplifyPolarAngle(`${p<0?'-':''}(${Math.abs(p)}*pi/${d})`)}}
   if(!ts)try{const s=nerdamer(`arg(${e})`).toString();if(/[a-z]/i.test(s)&&Math.abs(val(s)-th)<1e-9)ts=s}catch(_){}
   if(!rs)rs=nice(r);
   if(!ts){if(Math.abs(th)<1e-12)ts='0';else{const q=th/Math.PI;let f=null;for(let d=1;d<=12&&!f;d++){const p=Math.round(q*d);if(Math.abs(q-p/d)<1e-9)f=[p,d]}
-    ts=f?(f[0]<0?'-':'')+`(${Math.abs(f[0])}*pi/${f[1]})`:th.toPrecision(10)}}
+    ts=f?simplifyPolarAngle(`${f[0]<0?'-':''}(${Math.abs(f[0])}*pi/${f[1]})`):th.toPrecision(10)}}
   if(ts==='0')return tx(rs);
   const neg=ts.startsWith('-'),t2=neg?ts.slice(1):ts,cx=/[+\-]/;
   const rp=rs==='1'?'':(cx.test(rs)?`\\left(${tx(rs)}\\right)`:tx(rs));
@@ -463,6 +473,40 @@ function periodicSolution(e){
 }
 const LAB={eq:'Résultat',expand:'Développé',factor:'Factorisé',simplify:'Calculer',solve:'Solutions',polar:'Forme polaire',rect:'Forme algébrique',eig:'Polynôme caractéristique et valeurs propres',partfrac:'Éléments simples',approx:'Valeur approchée',ediv:'Division euclidienne',study:'Étude de fonction',ode:'Équation différentielle'};
 const FN={polar:'polarform',rect:'rectform'};
+const SETTINGS={angle:localStorage.getItem('formal-calculator-angle')==='deg'?'deg':'rad',format:localStorage.getItem('formal-calculator-format')==='expo'?'expo':'rect'};
+let ANGLE=SETTINGS.angle,FORMAT=SETTINGS.format;
+function saveSettings(){localStorage.setItem('formal-calculator-angle',ANGLE);localStorage.setItem('formal-calculator-format',FORMAT)}
+function angleExpression(expression){
+  if(ANGLE==='rad')return expression;
+  const convert=(source)=>{
+    let result='',i=0;
+    while(i<source.length){
+      const match=source.slice(i).match(/^(sin|cos|tan|asin|acos|atan)\s*\(/i);
+      if(!match){result+=source[i++];continue}
+      const name=match[1],start=i+match[0].length-1;let depth=0,end=-1;
+      for(let j=start;j<source.length;j++){if(source[j]==='(')depth++;else if(source[j]===')'&&!--depth){end=j;break}}
+      if(end<0){result+=source[i++];continue}
+      const argument=convert(source.slice(start+1,end));
+      result+=name.length===3&&['sin','cos','tan'].includes(name.toLowerCase())
+        ?`${name}(((${argument})*pi)/180)`
+        :`((180/pi)*${name}(${argument}))`;
+      i=end+1;
+    }
+    return result;
+  };
+  return convert(expression);
+}
+function resultFormat(expression,tex){
+  const squareRoot=expression.match(/^sqrt\((.*)\)$/);
+  if(FORMAT==='rect'&&squareRoot){
+    try{
+      const value=advComplex(squareRoot[1]);
+      return exactNumericRootsRectTex(value.re,value.im,2,true);
+    }catch(_){}
+  }
+  if(FORMAT!=='expo'||!/[i]|realpart|imagpart|conjugate|arg/.test(expression))return tex;
+  return polarTex(expression);
+}
 const exactSimplify=s=>{try{return nerdamer(`simplify(${s})`).toString()}catch(_){return s}};
 async function show(html,err){const o=$('out');o.className=err?'err':'';o.innerHTML=html;if(!err)try{await MathJax.typesetPromise([o])}catch(e){}}
 function vectorValue(s){return s.replace(/^\[|\]$/g,'').split(',').map(x=>parseFloat(nerdamer(x).evaluate().text('decimal')))}
@@ -486,6 +530,10 @@ function rootExactTex(z,index){
   let re,im,isNumeric=false;
   let reExpr='',imExpr='';
   try{reExpr=nerdamer(`realpart(${z})`).toString();imExpr=nerdamer(`imagpart(${z})`).toString();re=nerdamer(reExpr).evaluate().text('decimal');im=nerdamer(imExpr).evaluate().text('decimal');isNumeric=Number.isFinite(Number(re))&&Number.isFinite(Number(im))}catch(_){}
+  if(FORMAT==='rect'){
+    if(isNumeric&&Number.isInteger(n)&&n>0)return exactNumericRootsRectTex(Number(re),Number(im),n);
+    return symbolicRootsRectTex(z,nText);
+  }
   let radius=`abs(${z})`,rootRadius='',angle=`arg(${z})`;
   if(isNumeric&&Math.abs(Number(im))<1e-12){
     if(Number(re)>=0){radius=`(${z})`;rootRadius=exactRoot(z);angle='0'}
@@ -512,7 +560,18 @@ function rootExactTex(z,index){
 function advancedNodeRun(n,qt){
   const q=n.slots.map(s=>ser(s.nodes));
   if(n.t==='vec')return `\\begin{pmatrix}${q.join('\\\\')}\\end{pmatrix}`;
-  if(n.t==='roots'){const index=q[1];if(!index)throw new Error('Complète l’indice n de la racine.');return rootExactTex(q[0],index)}
+  if(n.t==='roots'){
+    const index=q[1];if(!index)throw new Error('Complète l’indice n de la racine.');
+    const nValue=Number(index);
+    if(FORMAT==='rect'){
+      if(Number.isInteger(nValue)&&nValue>0){
+        const value=advComplex(q[0]);
+        return exactNumericRootsRectTex(value.re,value.im,nValue);
+      }
+      return symbolicRootsRectTex(q[0],index);
+    }
+    return rootExactTex(q[0],index);
+  }
   if(n.t==='dot'){const a=vectorValue(q[0]),b=vectorValue(q[1]);if(a.length!==b.length)throw new Error('Les vecteurs doivent avoir la même dimension.');return String(a.reduce((s,x,i)=>s+x*b[i],0))}
   if(n.t==='cross'){const a=vectorValue(q[0]),b=vectorValue(q[1]);if(a.length!==3||b.length!==3)throw new Error('Le produit vectoriel exige deux vecteurs de dimension 3.');const c=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];return `\\begin{pmatrix}${c.map(advFmt).join('\\\\')}\\end{pmatrix}`}
   if(n.t==='study'){const v=q[1]||'x',d=nerdamer(`diff(${q[0]},${v})`),dd=nerdamer(`diff(${q[0]},${v},2)`);return `\\begin{aligned}D_f&=${functionDomain(q[0],v)}\\\\f(${v})&=${tx(q[0])}\\\\f'(${v})&=${tx(d.toString())}\\\\f''(${v})&=${tx(dd.toString())}\\end{aligned}`}
@@ -633,7 +692,8 @@ function run(mode){
     }
     let qt=texOf(root.nodes);
     validateMatrixProducts(root.nodes);
-    const e=ser(root.nodes);if(!e)throw new Error('Compose un calcul avant d’appuyer sur =.');
+    const source=ser(root.nodes);if(!source)throw new Error('Compose un calcul avant d’appuyer sur =.');
+    const e=angleExpression(source);
     if(root.nodes.length===1&&['vec','roots','dot','cross','study','ode'].includes(root.nodes[0].t)){
       const n=root.nodes[0],rt=advancedNodeRun(n,qt);show(`<span class="lab">${NM[n.t]}</span><div class="line"><div class="lq">\\[\\displaystyle ${qt}\\]</div><div class="lr">\\[\\displaystyle =${rt}\\]</div></div>`);pushHist(mode,rt);return;
     }
@@ -685,6 +745,7 @@ function run(mode){
       ans=o.toString();
       }
     rt=scientificTex(rt);
+    if(!['polar','rect'].includes(mode))rt=resultFormat(e,rt);
     const un=/integrate\(|defint\(|limit\(|sum\(/.test(o.toString());
     show(`<span class="lab">${LAB[mode]}</span><div class="line"><div class="lq">\\[\\displaystyle ${qt}\\]</div><div class="lr">\\[\\displaystyle ${['solve','eig','approx','ediv'].includes(mode)?'':'= '}${rt}${SUFFIX}\\]</div></div>`+(un?'<span class="hint">Aucune forme simple trouvée (certaines intégrales, comme e^sin(x), n’ont pas de primitive élémentaire).</span>':''));
   pushHist(mode,rt);}catch(err){show(String(err.message||err).replace(/</g,'&lt;'),true)}
@@ -726,8 +787,73 @@ function advSolve(a,b){if(a.length!==a[0].length||b.length!==a.length)throw new 
   const x=Array(n);for(let i=n-1;i>=0;i--){let z=m[i][n];for(let j=i+1;j<n;j++)z-=m[i][j]*x[j];x[i]=z/m[i][i]}return x}
 function advFmt(n){return Math.abs(n)<1e-10?'0':Number(n.toPrecision(10)).toString()}
 function advComplex(s){const re=advNumber(`realpart(${s})`),im=advNumber(`imagpart(${s})`);return{re,im}}
+function rootsRectTex(z,n){
+  const radius=Math.hypot(z.re,z.im),angle=Math.atan2(z.im,z.re),rootRadius=Math.pow(radius,1/n),roots=[];
+  for(let k=0;k<n;k++){
+    const a=(angle+2*Math.PI*k)/n,x=rootRadius*Math.cos(a),y=rootRadius*Math.sin(a);
+    const sign=y>=-1e-10?'+':'-';
+    roots.push(`${advFmt(x)}${sign}${advFmt(Math.abs(y))}i`);
+  }
+  return n===1?roots[0]:`\\left\\{${roots.map((value,k)=>`z_{${k+1}}=${value}`).join(',\\;')}\\right\\}`;
+}
+function exactRootAngleTex(re,im){
+  if(Math.abs(re)<1e-10)return im>=0?'pi/2':'-pi/2';
+  const ratio=Math.abs(im/re);
+  if(Math.abs(ratio-1)<1e-10){
+    if(re>0)return im>=0?'pi/4':'-pi/4';
+    return im>=0?'3*pi/4':'-3*pi/4';
+  }
+  if(Math.abs(ratio-Math.sqrt(3))<1e-10)return re>0?(im>=0?'pi/3':'-pi/3'):(im>=0?'2*pi/3':'-2*pi/3');
+  if(Math.abs(ratio-1/Math.sqrt(3))<1e-10)return re>0?(im>=0?'pi/6':'-pi/6'):(im>=0?'5*pi/6':'-5*pi/6');
+  return null;
+}
+function exactNumericRootsRectTex(re,im,n,single=false){
+  const angle=exactRootAngleTex(re,im);
+  if(!angle)return rootsRectTex({re,im},n);
+  const radius=nerdamer(`sqrt((${re})^2+(${im})^2)`).toString();
+  const rootRadius=nerdamer(`(${radius})^(1/${n})`).toString();
+  const trigTex=value=>{
+    const normalized=((value%(2*Math.PI))+2*Math.PI)%(2*Math.PI),q=normalized/Math.PI;
+    const values=[[0,'1','0'],[1/6,'\\frac{\\sqrt{3}}{2}','\\frac{1}{2}'],[1/4,'\\frac{\\sqrt{2}}{2}','\\frac{\\sqrt{2}}{2}'],[1/3,'\\frac{1}{2}','\\frac{\\sqrt{3}}{2}'],[1/2,'0','1'],[2/3,'-\\frac{1}{2}','\\frac{\\sqrt{3}}{2}'],[3/4,'-\\frac{\\sqrt{2}}{2}','\\frac{\\sqrt{2}}{2}'],[5/6,'-\\frac{\\sqrt{3}}{2}','\\frac{1}{2}'],[1,'-1','0'],[7/6,'-\\frac{\\sqrt{3}}{2}','-\\frac{1}{2}'],[5/4,'-\\frac{\\sqrt{2}}{2}','-\\frac{\\sqrt{2}}{2}'],[4/3,'-\\frac{1}{2}','-\\frac{\\sqrt{3}}{2}'],[3/2,'0','-1'],[5/3,'\\frac{1}{2}','-\\frac{\\sqrt{3}}{2}'],[7/4,'\\frac{\\sqrt{2}}{2}','-\\frac{\\sqrt{2}}{2}'],[11/6,'\\frac{\\sqrt{3}}{2}','-\\frac{1}{2}']];
+    return values.find(([key])=>Math.abs(q-key)<1e-9);
+  };
+  const multiply=(factor,value)=>{
+    if(value==='0')return '0';
+    if(factor==='1')return value;
+    if(value.startsWith('-'))return `-${multiply(factor,value.slice(1))}`;
+    const fraction=value.match(/^\\frac\{\\sqrt\{([^}]+)\}\}\{2\}$/);
+    return fraction?`\\frac{${factor}\\sqrt{${fraction[1]}}}{2}`:`${factor}${value}`;
+  };
+  const roots=[];
+  for(let k=0;k<n;k++){
+    const phaseValue=(Math.atan2(im,re)+2*Math.PI*k)/n;
+    const exact=trigTex(phaseValue);
+    if(!exact)return rootsRectTex({re,im},n);
+    const real=multiply(rootRadius,exact[1]),imag=multiply(rootRadius,exact[2]);
+    roots.push(`${real}${imag.startsWith('-')?imag:'+'+imag}i`);
+  }
+  return single||n===1?roots[0]:`\\left\\{${roots.map((value,k)=>`z_{${k+1}}=${value}`).join(',\\;')}\\right\\}`;
+}
+function symbolicRootsRectTex(z,index){
+  let modulus=tx(`abs(${z})`),argument=tx(`arg(${z})`);
+  try{
+    const reExpr=nerdamer(`realpart(${z})`).toString();
+    const imExpr=nerdamer(`imagpart(${z})`).toString();
+    const re=Number(nerdamer(reExpr).evaluate().text('decimal'));
+    const im=Number(nerdamer(imExpr).evaluate().text('decimal'));
+    if(Number.isFinite(re)&&Number.isFinite(im)){
+      modulus=tx(nerdamer(`sqrt((${reExpr})^2+(${imExpr})^2)`).toString());
+      argument=tx(exactRootAngleTex(re,im)||`arg(${z})`);
+    }
+  }catch(_){}
+  const order=tx(index);
+  const radius=`\\left(${modulus}\\right)^{\\frac{1}{${order}}}`;
+  const phase=`\\frac{${argument}+2k\\pi}{${order}}`;
+  return `${radius}\\cos\\left(${phase}\\right)+i${radius}\\sin\\left(${phase}\\right),\\quad 0\\le k\\le ${order}-1`;
+}
 function advancedCompute(kind){
   if(kind==='roots'){const z=advComplex(advRead('z')),n=Math.trunc(advNumber(advRead('n')));if(n<1)throw new Error('L’indice n doit être un entier positif.');
+    if(FORMAT==='rect')return `\\text{Racines de }${tx(advRead('z'))}:\\quad ${rootsRectTex(z,n)}`;
     const r=Math.hypot(z.re,z.im),theta=Math.atan2(z.im,z.re),out=[];for(let k=0;k<n;k++){const a=(theta+2*Math.PI*k)/n, q=Math.pow(r,1/n);out.push(`${advFmt(q*Math.cos(a))}${q*Math.sin(a)>=0?'+':''}${advFmt(q*Math.sin(a))}i`)}
     return `\\text{Racines de }${tx(advRead('z'))}:\\quad ${out.map((x,i)=>`z_${i+1}=${x}`).join('\\quad ')}`;
   }
@@ -793,11 +919,11 @@ const K2=[
  ['t','c:t','o'],['p','c:p','o'],['m','c:m','o'],['≈','approx','a'],['=','eq','eq2'],
  ['(','c:(','o'],[')','c:)','o'],['AC','ac','a'],['↶','undo','a'],['↷','redo','a']
 ];
-const ICONS={analyse:'sigma',fonctions:'function-square',matrices:'table-2',complexes:'circle-dot',arith:'binary',vars:'variable',physics:'atom',mode:'sliders-horizontal',advanced:'move-3d'};
+const ICONS={analyse:'sigma',fonctions:'function-square',matrices:'table-2',complexes:'circle-dot',arith:'binary',vars:'variable',physics:'atom',mode:'sliders-horizontal',advanced:'move-3d',options:'settings-2'};
 const MODEL={expand:'Développer',factor:'Factoriser',simplify:'Calculer',solve:'Résoudre',partfrac:'Él. simples',approx:'≈ Approché',polar:'Polaire',rect:'Algébrique',eig:'Val. propres',ediv:'Div. euclidienne',study:'Étude fonction',ode:'Éq. diff.'};
 const MODEK=['simplify','expand','factor','solve','partfrac','approx','ediv','study','ode'].map(k=>[MODEL[k],'mode:'+k,'a']);
 let MODE='simplify';
-function updMode(){const t=$('modeTag');if(t)t.textContent=MODE==='simplify'?'':'Mode : '+MODEL[MODE];
+function updMode(){const t=$('modeTag');if(t)t.textContent=`${ANGLE.toUpperCase()} · ${FORMAT==='expo'?'EXPO':'RECT'}${MODE==='simplify'?'':' · '+MODEL[MODE]}`;
   const b=document.querySelector('#pad [data-menu="mode"]');if(b){const lb=b.querySelector('.lb');if(lb)lb.textContent=MODEL[MODE];b.classList.toggle('on',MODE!=='simplify')}
   const names=Object.values(MODEL);
   document.querySelectorAll('#menu .mg button').forEach(x=>{if(names.includes(x.textContent))x.classList.toggle('on',x.textContent===MODEL[MODE])})}
@@ -806,22 +932,40 @@ const MENUS={
  analyse:{t:'Analyse',k:[['∑','sum','t'],['∏','prod','t'],['∫','int','t'],['∫ₐᵇ','defint','t'],['d/dx','diff','t'],['dⁿ/dxⁿ','diffn','t'],['lim','lim','t'],['DL','dl','t'],['∞','c:Infinity','o'],['=','c:=','o'],['Él. simples','mode:partfrac','a']]},
  fonctions:{t:'Fonctions',k:[['sin','trig:sin','t'],['cos','trig:cos','t'],['tan','trig:tan','t'],['arc','arc','a'],['hyp','hyp','a'],['ln','ln','t'],['log','log','t'],['eˣ','exp','t'],['|x|','abs','t'],['⌊x⌋','floor','t'],['⌈x⌉','ceil','t']]},
  matrices:{t:'Matrices',k:[['M×N personnalisée','customMatrix','t'],['2×2','mat2','t'],['3×3','mat3','t'],['det','det','t'],['M⁻¹','inv','t'],['Mᵗ','transp','t'],['Val. propres','mode:eig','a']]},
- complexes:{t:'Complexes',k:[['i','c:i','t'],['z','c:z','o'],['Re','re','t'],['Im','im','t'],['z̄','conj','t'],['arg','arg','t'],['|z|','abs','t'],['ⁿ√z','advanced:roots','t'],['Polaire','mode:polar','a'],['Algébrique','mode:rect','a']]},
+ complexes:{t:'Complexes',k:[['i','c:i','t'],['z','c:z','o'],['Re','re','t'],['Im','im','t'],['z̄','conj','t'],['arg','arg','t'],['|z|','abs','t'],['ⁿ√z','advanced:roots','t']]},
  arith:{t:'Arithmétique',k:[['n!','c:!','t'],['Cₙᵏ','binom','t'],['pgcd','pgcd','t'],['ppcm','ppcm','t'],['Div. eucl.','mode:ediv','a']]},
  vars:{t:'Variables et constantes',k:[['y','c:y','o'],['z','c:z','o'],['a','c:a','o'],['b','c:b','o'],['c','c:c','o'],['k','c:k','o'],['n','c:n','o'],['p','c:p','o'],['t','c:t','o'],['e','c:e','o'],['i','c:i','o'],['π','c:pi','t'],['=','c:=','o'],['Ans','ans','a']]},
  physics:{t:'Constantes physiques',k:[['c','const:c','t'],['G','const:G','t'],['g','const:g','t'],['h','const:h','t'],['ℏ','const:hbar','t'],['kᵦ','const:kB','t'],['Nₐ','const:NA','t'],['e','const:qe','t'],['mₑ','const:me','t'],['mₚ','const:mp','t'],['R','const:R','t']]},
  advanced:{t:'Vecteurs',k:[['Vecteur 2D','vec2','t'],['Vecteur 3D','vec3','t'],['Vecteur 4D','vec4','t'],['Produit scalaire','advanced:dot','t'],['Produit vectoriel','advanced:cross','t']]},
- mode:{t:'Mode de calcul (appliqué avec =)',k:MODEK}
+ mode:{t:'Mode de calcul (appliqué avec =)',k:MODEK},
+ options:{t:'Options',k:[]}
 };
 const KM=[
  [[ICONS.analyse,'Analyse'],'menu:analyse','m'],[[ICONS.fonctions,'Fonctions'],'menu:fonctions','m'],[[ICONS.complexes,'Complexes'],'menu:complexes','m'],[[ICONS.advanced,'Vecteurs'],'menu:advanced','m'],[[ICONS.matrices,'Matrices'],'menu:matrices','m'],[[ICONS.arith,'Arith.'],'menu:arith','m'],
- ['xⁿ','pow','t'],['√','sqrt','t'],['𝑥','c:x','v'],[[ICONS.vars,'Variables'],'menu:vars','m'],[[ICONS.physics,'Physique'],'menu:physics','m'],[[ICONS.mode,'Mode'],'menu:mode','m'],
+ ['xⁿ','pow','t'],['√','sqrt','t'],['𝑥','c:x','v'],[[ICONS.vars,'Variables'],'menu:vars','m'],[[ICONS.physics,'Physique'],'menu:physics','m'],[[ICONS.mode,'Mode'],'menu:mode','m'],[[ICONS.options,'Options'],'menu:options','m'],
  ['7','c:7'],['8','c:8'],['9','c:9'],['×','c:*','o'],['÷','frac','o'],['(','c:(','o'],
  ['4','c:4'],['5','c:5'],['6','c:6'],['+','c:+','o'],['−','c:-','o'],[')','c:)','o'],
  ['1','c:1'],['2','c:2'],['3','c:3'],['◀','left','o'],['▶','right','o'],['⌫','bs','o'],
  ['0','c:0'],['.','c:.'],['AC','ac','a'],[',','c:,','o'],['=','eq','eq']
 ];
 function closeMenu(){$('menu').hidden=true}
+function updOptions(){
+  document.querySelectorAll('#menu [data-option]').forEach(b=>b.classList.toggle('on',
+    (b.dataset.option==='angle'&&b.dataset.value===ANGLE)||(b.dataset.option==='format'&&b.dataset.value===FORMAT)));
+}
+function chooseOption(option,value){
+  if(option==='angle')ANGLE=value;else FORMAT=value;
+  saveSettings();updMode();updOptions();closeMenu();
+}
+function optionsMenu(host){
+  const groups=[['Unité d’angle','angle',[['RAD','rad'],['DEG','deg']]],['Résultat complexe','format',[['RECT','rect'],['EXPO','expo']]]];
+  const box=E('div','options');
+  groups.forEach(([title,option,values])=>{
+    const group=E('div','option-group');group.append(E('strong','',title));
+    const row=E('div','pad mg');values.forEach(([label,value])=>{const b=E('button','',label);b.dataset.option=option;b.dataset.value=value;b.onclick=()=>chooseOption(option,value);row.append(b)});group.append(row);box.append(group);
+  });
+  host.append(box);
+}
 function mkK(arr,host,inMenu){arr.forEach(([l,a,c])=>{let content;if(Array.isArray(l)){const icon=E('span','ic');icon.dataset.lucide=l[0];content=[icon,E('span','lb',l[1])]}else content=[l];const b=E('button',c||'',...content);
   if(a.startsWith('trig:'))b.dataset.tr=a.slice(5);
   if(a==='arc'||a==='hyp')b.id='b_'+a;
@@ -830,8 +974,8 @@ function mkK(arr,host,inMenu){arr.forEach(([l,a,c])=>{let content;if(Array.isArr
   host.append(b)})}
 function openMenu(name){const m=MENUS[name],h=$('menu');h.innerHTML='';h.dataset.n=name;
   const x=E('button','mx','✕');x.onclick=closeMenu;
-  const g=E('div','pad mg');mkK(m.k,g,true);
-  const titleIcon=E('span','ic');titleIcon.dataset.lucide=ICONS[name]||'menu';h.append(E('div','mh',E('span','',titleIcon,'  '+m.t),x),g);h.hidden=false;if(window.lucide)lucide.createIcons();updKeys();updMode()}
+  const content=E('div',name==='options'?'':'pad mg');if(name==='options')optionsMenu(content);else mkK(m.k,content,true);
+  const titleIcon=E('span','ic');titleIcon.dataset.lucide=ICONS[name]||'menu';h.append(E('div','mh',E('span','',titleIcon,'  '+m.t),x),content);h.hidden=false;if(window.lucide)lucide.createIcons();updKeys();updMode();updOptions()}
 mkK(KM,$('pad'),false);if(window.lucide)lucide.createIcons();updMode();
 document.addEventListener('click',ev=>{const t=ev.target;if(t.isConnected&&!t.closest('#menu')&&!t.closest('[data-menu]'))closeMenu()});
 
